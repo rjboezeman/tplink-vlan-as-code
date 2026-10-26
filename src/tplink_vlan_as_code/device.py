@@ -67,8 +67,13 @@ class TplinkDevice:
 
     def links(self) -> tuple[Link, ...]:
         with self._errors("reading port status"):
-            return tuple(Link(enabled, None if code == 0 else SPEEDS.get(code, f"speed code {code}"))
-                         for enabled, code in self._ui.port_status())
+            status = self._ui.port_status()
+            n = self._port_count or len(self._ui.pvids())
+        if len(status) < n:
+            raise DeviceError(f"{self.host}: port status lists {len(status)} ports, switch has {n}")
+        # the firmware pads its port arrays (an 8-port TL-SG108PE v5 reports 10 entries); keep the real ports
+        return tuple(Link(enabled, None if code == 0 else SPEEDS.get(code, f"speed code {code}"))
+                     for enabled, code in status[:n])
 
     def apply(self, op: Op) -> None:
         with self._errors(op.describe()):

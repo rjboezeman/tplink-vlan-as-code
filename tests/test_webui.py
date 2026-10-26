@@ -62,6 +62,7 @@ def test_identity_and_state(emu):
     assert dev.identity().mac == "00:00:5E:00:53:10" and dev.identity().hardware == "TL-SG108PE 3.0"
     assert dev.read_state() == BASE
     assert dev.links()[0] == Link(True, "1000M full") and dev.links()[1] == Link(True, None)
+    assert len(dev.links()) == 8  # padding entries beyond the real ports are dropped
 
 
 def test_every_write_reaches_the_switch(emu):

@@ -25,6 +25,7 @@ class SwitchEmulator:
                  password="hunter2", links=None):
         self.state, self.mac, self.hardware, self.password = state, mac, hardware, password
         self.links = links or [(1, 6 if p == 1 else 0) for p in range(1, state.port_count + 1)]
+        self.links = list(self.links) + [(0, 0), (0, 0)]  # real firmware pads all_info: 10 entries on an 8-port switch
         self.session: str | None = None
         self.requests: list[tuple[str, str, str]] = []  # (method, path+query, body)
         self.drop_next_write = False
