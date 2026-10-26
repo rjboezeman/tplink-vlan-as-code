@@ -154,4 +154,4 @@ def test_link_report(cfg):
     assert by_port[2]["finding"] == "port is administratively disabled"
     assert by_port[1]["finding"] == "no link on port named 'cam north'"
     assert by_port[3]["finding"] is None
-    assert by_port[8]["finding"] is None and by_port[8]["membership"] == "T100,200,400 pvid4000"
+    assert by_port[8]["finding"] is None and by_port[8]["membership"] == "T100,200,400 pvid1"

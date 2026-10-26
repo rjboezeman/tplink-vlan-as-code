@@ -12,7 +12,7 @@ import hashlib
 import ipaddress
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -78,9 +78,10 @@ class Config:
     warnings: tuple[str, ...]
 
     def desired(self, switch: str) -> SwitchState:
-        """Every declared VLAN exists on every switch; membership comes from the port table."""
+        """A VLAN exists on a switch only where it has at least one port (the firmware cannot hold an
+        empty VLAN); VLAN 1 always exists. Membership comes from the port table."""
         spec = self.switches[switch]
-        vids = set(self.vlans) | {DEFAULT_VID}
+        vids = {v for p in spec.ports for v in (*p.tagged, p.untagged) if v is not None} | {DEFAULT_VID}
         tagged = {v: set() for v in vids}
         untagged = {v: set() for v in vids}
         for p in spec.ports:
@@ -150,8 +151,12 @@ class _Parser:
         return None
 
     def parse(self, data: dict, path: Path, sha256: str) -> Config:
-        self.keys("config", data, {"title", "management_vlan", "vlans", "switches"},
+        self.keys("config", data, {"title", "management_vlan", "all_vlans_on_trunks", "vlans", "switches"},
                   {"management_vlan", "vlans", "switches"})
+        all_on_trunks = data.get("all_vlans_on_trunks", False)
+        if not isinstance(all_on_trunks, bool):
+            self.err("all_vlans_on_trunks", "must be true or false")
+            all_on_trunks = False
         title = data.get("title", "")
         if not isinstance(title, str) or len(title) > 120:
             self.err("title", "must be a string of at most 120 characters")
@@ -170,7 +175,10 @@ class _Parser:
             if spec:
                 switches[name] = spec
         if not self.problems:
+            if all_on_trunks:
+                switches = self.expand_trunks(switches, vlans)
             self.check_topology(switches, mgmt)
+            self.check_pvids(switches)
         return Config(path, sha256, title, mgmt, vlans, switches, tuple(self.warnings))
 
     def parse_vlans(self, raw: Any) -> dict[int, VlanSpec]:
@@ -273,6 +281,35 @@ class _Parser:
                 self.err(f"{pw}.pvid", f"VLAN {pvid!r} is not declared")
             ports.append(PortSpec(n, name, untagged, tuple(tagged), pvid))
         return tuple(ports)
+
+    def expand_trunks(self, switches: dict[str, SwitchSpec], vlans: dict[int, VlanSpec]) -> dict[str, SwitchSpec]:
+        """all_vlans_on_trunks: both ends of every switch-to-switch cable carry every declared VLAN, tagged
+        (unless it is untagged there), so every VLAN exists on every switch. Router uplinks are left alone."""
+        out = dict(switches)
+        for s in switches.values():
+            if not s.upstream:
+                continue
+            parent, pport = s.upstream
+            if parent not in out or not (isinstance(pport, int) and 1 <= pport <= len(out[parent].ports)):
+                continue  # check_topology reports it
+            for name, number in ((s.name, s.uplink_port), (parent, pport)):
+                sw = out[name]
+                p = sw.ports[number - 1]
+                tagged = tuple(sorted(set(p.tagged) | {v for v in vlans if v != p.untagged}))
+                ports = list(sw.ports)
+                ports[number - 1] = replace(p, tagged=tagged)
+                out[name] = replace(sw, ports=tuple(ports))
+        return out
+
+    def check_pvids(self, switches: dict[str, SwitchSpec]) -> None:
+        """A PVID must name a VLAN that exists on that switch, i.e. has at least one port there (or VLAN 1)."""
+        for s in switches.values():
+            present = {v for p in s.ports for v in (*p.tagged, p.untagged) if v is not None} | {DEFAULT_VID}
+            for p in s.ports:
+                if p.pvid not in present:
+                    self.err(f"switches.{s.name}.ports.{p.number}.pvid",
+                             f"VLAN {p.pvid} has no port on {s.name}, and the switch cannot hold an empty VLAN; "
+                             "give it a port, or use pvid = 1 (VLAN 1 always exists) to drop untagged frames")
 
     def check_topology(self, switches: dict[str, SwitchSpec], mgmt: int) -> None:
         used_parent_ports = {}

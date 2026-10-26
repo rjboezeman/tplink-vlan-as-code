@@ -20,12 +20,13 @@ from .conftest import connector, in_sync_devices
 
 
 def drift(dev: FakeDevice, port: int = 4) -> None:
-    """Port `port` moved from staff (untagged 200 / pvid 200) to guest (300); not a management-path port."""
+    """Port `port` moved from staff (untagged 200 / pvid 200) to cameras (400, present on every switch);
+    not a management-path port."""
     v = dict(dev.state.vlans)
     v[200] = replace(v[200], untagged=v[200].untagged - {port})
-    v[300] = replace(v[300], untagged=v[300].untagged | {port})
+    v[400] = replace(v[400], untagged=v[400].untagged | {port})
     pvids = list(dev.state.pvids)
-    pvids[port - 1] = 300
+    pvids[port - 1] = 400
     dev.state = replace(dev.state, vlans=v, pvids=tuple(pvids))
 
 

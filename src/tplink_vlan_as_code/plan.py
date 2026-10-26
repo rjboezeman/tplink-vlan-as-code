@@ -26,6 +26,8 @@ DELETE_VLAN = "delete_vlan"
 #   4. A PVID must point at an existing VLAN.
 #   5. At most MAX_VLANS 802.1Q VLANs exist at once.
 #   6. Turning 802.1Q mode on resets the table to VLAN 1, all ports untagged, all PVIDs 1.
+#   7. A VLAN other than VLAN 1 needs at least one member port; the switch silently ignores
+#      creating an empty one (verified on TL-SG108PE 5.0; the web UI offers no way to do it).
 MAX_VLANS = 32
 
 
@@ -70,6 +72,8 @@ def apply_op(state: SwitchState, op: Op) -> SwitchState:
         raise RuleError("802.1Q mode is off")
     vlans = dict(state.vlans)
     if op.kind == SET_VLAN:
+        if op.vid != DEFAULT_VID and not op.tagged and not op.untagged:
+            raise RuleError(f"vlan {op.vid}: a VLAN needs at least one member port")
         if op.vid not in vlans and len(vlans) >= MAX_VLANS:
             raise RuleError(f"vlan {op.vid}: switch already has {MAX_VLANS} VLANs")
         name = op.name if op.name is not None else (vlans[op.vid].name if op.vid in vlans else "")

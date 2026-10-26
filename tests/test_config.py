@@ -5,7 +5,7 @@ from tplink_vlan_as_code.state import DEFAULT_VID
 
 from .conftest import EXAMPLE
 
-STUDIO_UPLINK = '8 = { name = "uplink",   tagged = [100, 200, 300, 400], pvid = 4000 }'
+STUDIO_UPLINK = '8 = { name = "uplink",   tagged = [100, 200, 300, 400], pvid = 1 }'
 
 
 def load_variant(tmp_path, old: str, new: str):
@@ -27,8 +27,9 @@ def test_desired_state(cfg):
     rack = cfg.desired("rack")
     assert rack.vlans[100].tagged == {1, 2, 8} and rack.vlans[100].untagged == {7}
     assert rack.vlans[DEFAULT_VID].name is None and not rack.vlans[DEFAULT_VID].tagged | rack.vlans[DEFAULT_VID].untagged
-    assert rack.pvids == (4000, 4000, 200, 200, 400, 4000, 100, 4000)
-    assert set(rack.vlans) == {1, 100, 200, 300, 400, 4000}  # every VLAN on every switch
+    assert rack.pvids == (1, 1, 200, 200, 400, 1, 100, 1)
+    assert set(rack.vlans) == {1, 100, 200, 300, 400}
+    assert 300 not in cfg.desired("workshop").vlans  # no port in VLAN 300 there: the switch cannot hold it
 
 
 @pytest.mark.parametrize("old, new, message", [
@@ -77,3 +78,25 @@ def test_reports_all_problems_at_once(tmp_path):
     with pytest.raises(ConfigError) as e:
         load(p)
     assert len(e.value.problems) >= 4
+
+
+def test_pvid_must_name_a_vlan_present_on_the_switch(tmp_path):
+    with pytest.raises(ConfigError) as e:  # workshop has no port in VLAN 300
+        load_variant(tmp_path, "7 = { pvid = 1 }", "7 = { pvid = 300 }")
+    assert any("switches.workshop.ports.7.pvid" in p and "cannot hold an empty VLAN" in p for p in e.value.problems)
+
+
+def test_all_vlans_on_trunks(tmp_path):
+    cfg = load_variant(tmp_path, "# all_vlans_on_trunks = true", "all_vlans_on_trunks = true")
+    ws, rack = cfg.desired("workshop"), cfg.desired("rack")
+    assert ws.vlans[300].tagged == {8} and not ws.vlans[300].untagged       # uplink now carries guest
+    assert rack.vlans[300].tagged == {1, 2, 8}                              # and so does the downlink
+    assert rack.vlans[200].untagged == {3, 4} and 1 not in rack.vlans[200].untagged
+    assert cfg.warnings == ()  # both cable ends expanded the same way
+    # the router uplink (rack:8) is not a switch-to-switch trunk and is left as written
+    assert cfg.switches["rack"].ports[7].tagged == (100, 200, 300, 400)
+
+
+def test_all_vlans_on_trunks_must_be_bool(tmp_path):
+    with pytest.raises(ConfigError, match="all_vlans_on_trunks"):
+        load_variant(tmp_path, "# all_vlans_on_trunks = true", 'all_vlans_on_trunks = "yes"')

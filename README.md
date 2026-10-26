@@ -152,6 +152,21 @@ one place: `apply_op` in [`plan.py`](src/tplink_vlan_as_code/plan.py).
 5. At most 32 VLANs.
 6. Turning 802.1Q mode on resets the table. If it is off, the plan contains only that step.
    Run plan again afterwards.
+7. A VLAN other than VLAN 1 needs at least one member port. The switch silently ignores an
+   attempt to create an empty one, and its web UI offers no way to do so either. Verified on
+   a TL-SG108PE 5.0.
+
+Rule 7 shapes the config model:
+
+- A VLAN exists on a switch only where at least one of that switch's ports is in it. A VLAN
+  that loses its last port on a switch is deleted there.
+- A port's PVID must name a VLAN that exists on that switch. VLAN 1 always exists, and unless
+  you use it, it stays empty, so `pvid = 1` on tagged-only ports is the way to drop stray
+  untagged frames.
+- Set `all_vlans_on_trunks = true` at the top of the config to make every switch-to-switch
+  cable carry every declared VLAN, tagged at both ends. Every VLAN then exists on every switch
+  without spending an access port on it. Uplinks to a router or firewall are left exactly as
+  written.
 
 If your firmware behaves differently, the read-back check stops the run and points you at the
 snapshot. Please open an issue with the details.

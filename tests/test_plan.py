@@ -99,4 +99,18 @@ def test_device_rules(op, message):
 def test_vlan_limit():
     full = SwitchState(True, {v: Vlan(str(v)) for v in range(1, MAX_VLANS + 1)}, (1,))
     with pytest.raises(RuleError, match="already has"):
-        apply_op(full, Op(SET_VLAN, 4001, "x"))
+        apply_op(full, Op(SET_VLAN, 4001, "x", untagged=(1,)))
+
+
+def test_empty_vlan_cannot_be_created():
+    """Rule 7, found on real hardware: the switch silently ignores creating a VLAN with no ports."""
+    with pytest.raises(RuleError, match="at least one member port"):
+        apply_op(SwitchState(True, {1: Vlan("Default")}, (1, 1)), Op(SET_VLAN, 90, "domotica"))
+    apply_op(SwitchState(True, {1: Vlan("Default", untagged=frozenset({1}))}, (1, 1)), Op(SET_VLAN, 1, "Default"))  # VLAN 1 may be empty
+
+
+def test_vlan_left_without_ports_is_deleted(cfg):
+    cur = realize(cfg.desired("workshop"))
+    cur = with_vlan(cur, 300, Vlan("guest", tagged=frozenset({8})))  # present on the switch, no port in config
+    [op] = plan_for(cfg, "workshop", cur)
+    assert (op.kind, op.vid) == (DELETE_VLAN, 300)

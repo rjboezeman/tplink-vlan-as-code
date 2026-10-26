@@ -6,8 +6,11 @@
 # other than pyproject.toml are git-ignored, so your real network never gets committed.
 #
 # Rules of the format (checked by `tplink-vlan validate`):
-#   - Every VLAN listed under [vlans] is created on every switch. VLAN 1 is built in:
-#     declare it only if you use it; otherwise it is kept, emptied, and left alone.
+#   - A VLAN exists on a switch only where at least one of its ports is in it: the firmware
+#     cannot hold an empty VLAN. VLAN 1 is built in and always exists; unless you declare
+#     and use it, it is kept empty, which makes pvid = 1 a safe "drop untagged frames".
+#   - all_vlans_on_trunks = true makes every switch-to-switch cable carry every VLAN (tagged),
+#     so every VLAN exists on every switch without spending access ports on it.
 #   - Every port of every switch must be listed, unused ones too (explicit beats implicit).
 #   - A port has at most one untagged VLAN; its PVID defaults to that VLAN.
 #     A port with no untagged VLAN needs an explicit pvid.
@@ -20,6 +23,7 @@
 
 title = "Example small office"
 management_vlan = 100
+# all_vlans_on_trunks = true
 
 [vlans.100]
 name = "mgmt"
@@ -36,10 +40,6 @@ color = "#FB8C00"   # optional, diagram only
 name = "cameras"
 description = "isolated, no internet"
 
-[vlans.4000]
-name = "blackhole"
-description = "PVID for tagged-only ports: untagged frames go nowhere"
-
 [switches.rack]
 host = "192.0.2.10"
 model = "TL-SG108PE"
@@ -49,14 +49,14 @@ uplink_port = 8                # towards the firewall
 # password_env = "RACK_SW_PW"  # default: TPLINK_PASSWORD_RACK, then TPLINK_PASSWORD
 
 [switches.rack.ports]
-1 = { name = "to studio",   tagged = [100, 200, 300, 400], pvid = 4000 }
-2 = { name = "to workshop", tagged = [100, 200, 400], pvid = 4000 }
+1 = { name = "to studio",   tagged = [100, 200, 300, 400], pvid = 1 }   # pvid 1: untagged frames dropped
+2 = { name = "to workshop", tagged = [100, 200, 400], pvid = 1 }
 3 = { name = "NAS",         untagged = 200 }
 4 = { name = "printer",     untagged = 200 }
 5 = { name = "door cam",    untagged = 400 }
-6 = { name = "spare",       pvid = 4000 }
+6 = { name = "spare",       pvid = 1 }
 7 = { name = "admin desk",  untagged = 100 }
-8 = { name = "firewall",    tagged = [100, 200, 300, 400], pvid = 4000 }
+8 = { name = "firewall",    tagged = [100, 200, 300, 400], pvid = 1 }
 
 [switches.studio]
 host = "192.0.2.11"
@@ -73,7 +73,7 @@ upstream = { switch = "rack", port = 1 }
 5 = { untagged = 200 }
 6 = { untagged = 300 }
 7 = { untagged = 300 }
-8 = { name = "uplink",   tagged = [100, 200, 300, 400], pvid = 4000 }
+8 = { name = "uplink",   tagged = [100, 200, 300, 400], pvid = 1 }
 
 [switches.workshop]
 host = "192.0.2.12"
@@ -89,5 +89,5 @@ upstream = { switch = "rack", port = 2 }
 4 = { untagged = 200 }
 5 = { untagged = 200 }
 6 = { untagged = 100 }
-7 = { pvid = 4000 }
-8 = { name = "uplink",    tagged = [100, 200, 400], pvid = 4000 }
+7 = { pvid = 1 }
+8 = { name = "uplink",    tagged = [100, 200, 400], pvid = 1 }
