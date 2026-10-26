@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tplink-vlan-as-code"
+dynamic = ["version"]
+description = "Declarative 802.1Q VLAN/PVID management for TP-Link Easy Smart switches: validate, plan, dry-run, apply with verification."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = []  # standard library only: every byte sent to a switch is in this repo
+keywords = ["tp-link", "vlan", "802.1q", "network-automation", "infrastructure-as-code"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Networking",
+    "Environment :: Console",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+tplink-vlan = "tplink_vlan_as_code.cli:main"
+
+[project.urls]
+Repository = "https://github.com/rjboezeman/tplink-vlan-as-code"
+
+[tool.setuptools.dynamic]
+version = { attr = "tplink_vlan_as_code.__version__" }
+
+[tool.ruff]
+line-length = 145
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101"]  # asserts are fine in tests
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "UP031"]  # tests parse their own output, use fake credentials; % keeps JS-brace templates readable
