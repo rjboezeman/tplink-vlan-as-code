@@ -28,6 +28,8 @@ DELETE_VLAN = "delete_vlan"
 #   6. Turning 802.1Q mode on resets the table to VLAN 1, all ports untagged, all PVIDs 1.
 #   7. A VLAN other than VLAN 1 needs at least one member port; the switch silently ignores
 #      creating an empty one (verified on TL-SG108PE 5.0; the web UI offers no way to do it).
+#   8. A port left in no VLAN at all is put back in VLAN 1 untagged; its PVID is unchanged
+#      (verified on TL-SG108PE 5.0, when moving a port from VLAN 70 to VLAN 80 in that order).
 MAX_VLANS = 32
 
 
@@ -78,6 +80,7 @@ def apply_op(state: SwitchState, op: Op) -> SwitchState:
             raise RuleError(f"vlan {op.vid}: switch already has {MAX_VLANS} VLANs")
         name = op.name if op.name is not None else (vlans[op.vid].name if op.vid in vlans else "")
         vlans[op.vid] = Vlan(name, frozenset(op.tagged), frozenset(op.untagged))
+        _rehome(vlans, state.port_count)
         return replace(state, vlans=vlans)
     if op.kind == SET_PVID:
         if op.vid not in vlans:
@@ -91,8 +94,19 @@ def apply_op(state: SwitchState, op: Op) -> SwitchState:
         if op.vid in state.pvids:
             raise RuleError(f"vlan {op.vid} is still a PVID")
         del vlans[op.vid]
+        _rehome(vlans, state.port_count)
         return replace(state, vlans=vlans)
     raise ValueError(f"unknown op kind {op.kind!r}")
+
+
+def _rehome(vlans: dict[int, Vlan], port_count: int) -> set[int]:
+    """Rule 8: put ports that are in no VLAN into VLAN 1 untagged, in place. Returns those ports."""
+    members = set().union(*(v.tagged | v.untagged for v in vlans.values()))
+    orphans = set(range(1, port_count + 1)) - members
+    if orphans and DEFAULT_VID in vlans:
+        d = vlans[DEFAULT_VID]
+        vlans[DEFAULT_VID] = replace(d, untagged=d.untagged | orphans)
+    return orphans
 
 
 def matches(actual: SwitchState, desired: SwitchState) -> bool:
@@ -119,7 +133,9 @@ def make_plan(
     """Ops that take `current` to `desired`, ordered so no step breaks a device rule.
 
     Order: create/modify VLANs, then PVIDs, then deletes. That way a PVID never points at a
-    missing VLAN and a VLAN is never deleted while still in use.
+    missing VLAN and a VLAN is never deleted while still in use. Within the VLANs, a port is
+    added to its new VLAN before it is removed from its old one where possible (rule 8), and
+    VLAN 1 comes last, so it can also clean up after a port that rule 8 parked there.
 
     `protected_ports` are the ports that carry this switch's management path (its uplink and
     the downlinks to switches behind it). Ops that could break that path get a `risk` reason.
@@ -134,18 +150,32 @@ def make_plan(
         for s in (current, desired)
         if mgmt_vid in s.vlans and s.vlans[mgmt_vid].mode(p) == "U"
     }
-    ops = []
-    for vid, want in sorted(desired.vlans.items()):
-        have = current.vlans.get(vid)
-        if _vlan_matches(have, want):
-            continue
+
+    def set_op(vid: int, have: Vlan | None, want: Vlan) -> Op:
         risk = ""
         if vid == mgmt_vid:
             changed = sorted(p for p in protected if (have.mode(p) if have else None) != want.mode(p))
             if changed:
                 risk = f"changes management VLAN {vid} membership on management-path port(s) {changed}"
         name = want.name if want.name is not None else (have.name if have else "")  # ops always carry what is sent
-        ops.append(Op(SET_VLAN, vid, name, tuple(sorted(want.tagged)), tuple(sorted(want.untagged)), risk=risk))
+        return Op(SET_VLAN, vid, name, tuple(sorted(want.tagged)), tuple(sorted(want.untagged)), risk=risk)
+
+    def after(vlans: dict[int, Vlan], op: Op) -> tuple[dict[int, Vlan], set[int]]:
+        vlans = {**vlans, op.vid: Vlan(op.name, frozenset(op.tagged), frozenset(op.untagged))}
+        return vlans, _rehome(vlans, current.port_count)
+
+    ops, vlans = [], dict(current.vlans)
+    pending = [set_op(vid, current.vlans.get(vid), want) for vid, want in sorted(desired.vlans.items())
+               if vid != DEFAULT_VID and not _vlan_matches(current.vlans.get(vid), want)]
+    while pending:
+        # Greedy: the first op that orphans no port. When every op would (ports swapping VLANs),
+        # take one anyway; rule 8 parks the port in VLAN 1 and the VLAN 1 step below cleans up.
+        op = next((o for o in pending if not after(vlans, o)[1]), pending[0])
+        pending.remove(op)
+        ops.append(op)
+        vlans = after(vlans, op)[0]
+    if DEFAULT_VID in desired.vlans and not _vlan_matches(vlans.get(DEFAULT_VID), desired.vlans[DEFAULT_VID]):
+        ops.append(set_op(DEFAULT_VID, vlans.get(DEFAULT_VID), desired.vlans[DEFAULT_VID]))
     for port, (want, have) in enumerate(zip(desired.pvids, current.pvids, strict=True), start=1):
         if want != have:
             risk = f"changes PVID of management-path port {port}" if port in mgmt_untagged else ""

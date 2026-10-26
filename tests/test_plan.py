@@ -76,9 +76,9 @@ def test_pvid_change_on_untagged_management_uplink_is_risky():
 
 def test_vlan1_is_emptied_never_deleted(cfg):
     cur = realize(cfg.desired("workshop"))
-    cur = with_vlan(cur, 1, Vlan("Default", untagged=frozenset({6})))
+    cur = with_vlan(cur, 1, Vlan("Default", untagged=frozenset({6, 7})))
     [op] = plan_for(cfg, "workshop", cur)
-    assert (op.kind, op.vid, op.name, op.untagged) == (SET_VLAN, 1, "Default", ())  # undeclared name: keep the switch's
+    assert (op.kind, op.vid, op.name, op.untagged) == (SET_VLAN, 1, "Default", (7,))  # undeclared name: keep the switch's
 
 
 def test_dot1q_off_plans_only_enable(cfg):
@@ -114,3 +114,34 @@ def test_vlan_left_without_ports_is_deleted(cfg):
     cur = with_vlan(cur, 300, Vlan("guest", tagged=frozenset({8})))  # present on the switch, no port in config
     [op] = plan_for(cfg, "workshop", cur)
     assert (op.kind, op.vid) == (DELETE_VLAN, 300)
+
+
+def test_port_left_in_no_vlan_lands_in_vlan1():
+    """Rule 8, found on real hardware: the switch parks a port that is in no VLAN in VLAN 1, PVID unchanged."""
+    s = SwitchState(True, {1: Vlan("Default"), 70: Vlan("q", untagged=frozenset({1, 2}))}, (70, 70))
+    s = apply_op(s, Op(SET_VLAN, 70, "q", untagged=(1,)))
+    assert s.vlans[1].untagged == {2} and s.pvids == (70, 70)
+
+
+def test_port_is_added_to_new_vlan_before_leaving_old(cfg):
+    """The real-hardware failure: moving a port to a higher VLAN ID must not orphan it in between."""
+    cur = realize(cfg.desired("workshop"))  # cam north (port 1) sits in 200 instead of 400
+    cur = with_vlan(cur, 400, replace(cur.vlans[400], untagged=cur.vlans[400].untagged - {1}))
+    cur = with_vlan(cur, 200, replace(cur.vlans[200], untagged=cur.vlans[200].untagged | {1}))
+    cur = replace(cur, pvids=(200,) + cur.pvids[1:])
+    ops = plan_for(cfg, "workshop", cur)
+    assert [o.vid for o in ops if o.kind == SET_VLAN] == [400, 200]
+    states = simulate(cur, ops)
+    assert all(1 not in s.vlans[1].untagged for s in states)
+    assert matches(states[-1], cfg.desired("workshop"))
+
+
+def test_ports_swapping_vlans_converge_via_vlan1(cfg):
+    """No order avoids an orphan when two ports swap VLANs; VLAN 1 is fixed up last."""
+    want = realize(cfg.desired("workshop"))  # swap cam north (400) and bench (200)
+    cur = with_vlan(want, 400, replace(want.vlans[400], untagged=frozenset({2, 3})))
+    cur = with_vlan(cur, 200, replace(cur.vlans[200], untagged=frozenset({1, 4, 5})))
+    cur = replace(cur, pvids=(200, 400, 400) + cur.pvids[3:])
+    ops = plan_for(cfg, "workshop", cur)
+    assert ops[2] == Op(SET_VLAN, 1, "Default", (), (7,))
+    assert matches(simulate(cur, ops)[-1], cfg.desired("workshop"))

@@ -27,7 +27,7 @@ from .config import Config, SwitchSpec
 from .device import Device, DeviceError, FakeDevice, TplinkDevice
 from .plan import ENABLE_DOT1Q, Op, RuleError, make_plan, matches, simulate
 from .snapshot import Identity
-from .state import Link, SwitchState
+from .state import DEFAULT_VID, Link, SwitchState
 
 PLAN_FORMAT = "tplink-vlan-as-code/plan/v1"
 
@@ -212,8 +212,9 @@ def execute(cfg: Config, plans: list[SwitchPlan], connect: Connector, snapshot_d
 def link_report(cfg: Config, plans: list[SwitchPlan]) -> list[dict[str, Any]]:
     """Compare live link state with the switch's VLAN config and the config file, port by port.
 
-    warning: a device is connected (link up) but the port is in no VLAN on the switch, so its
-             traffic is dropped; or the port's live config differs from the config file.
+    warning: a device is connected (link up) but the port is in no VLAN on the switch other than
+             an undeclared VLAN 1, where the switch parks such ports (device rule 8), so its traffic
+             goes nowhere; or the port's live config differs from the config file.
     info:    a device on a port with no name in the config (undocumented), a named port without
              link (device missing), or a port that is administratively disabled.
     """
@@ -228,8 +229,9 @@ def link_report(cfg: Config, plans: list[SwitchPlan]) -> list[dict[str, Any]]:
             finding, severity = None, None
             if link is None:
                 pass  # reported once per switch via links_known
-            elif link.speed and not live:
-                finding, severity = "link up, but the port is in no VLAN on the switch: its traffic is dropped", "warning"
+            elif link.speed and not any(n in vl.tagged | vl.untagged for v, vl in p.current.vlans.items()
+                                        if v != DEFAULT_VID or DEFAULT_VID in cfg.vlans):
+                finding, severity = "link up, but the port is in no VLAN (only built-in VLAN 1): its traffic goes nowhere", "warning"
             elif link.speed and live != _membership(desired, n):
                 finding, severity = f"link up, and the switch has {live} where the config says {_membership(desired, n)}", "warning"
             elif not link.enabled:

@@ -1,7 +1,7 @@
 import pytest
 
 from tplink_vlan_as_code.config import ConfigError, load
-from tplink_vlan_as_code.state import DEFAULT_VID
+from tplink_vlan_as_code.state import DEFAULT_VID, Vlan
 
 from .conftest import EXAMPLE
 
@@ -26,7 +26,7 @@ def test_example_is_valid(cfg):
 def test_desired_state(cfg):
     rack = cfg.desired("rack")
     assert rack.vlans[100].tagged == {1, 2, 8} and rack.vlans[100].untagged == {7}
-    assert rack.vlans[DEFAULT_VID].name is None and not rack.vlans[DEFAULT_VID].tagged | rack.vlans[DEFAULT_VID].untagged
+    assert rack.vlans[DEFAULT_VID] == Vlan(None, untagged=frozenset({6}))  # "spare" is in no VLAN: the switch parks it in 1
     assert rack.pvids == (1, 1, 200, 200, 400, 1, 100, 1)
     assert set(rack.vlans) == {1, 100, 200, 300, 400}
     assert 300 not in cfg.desired("workshop").vlans  # no port in VLAN 300 there: the switch cannot hold it

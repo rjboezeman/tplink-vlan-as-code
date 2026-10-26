@@ -155,14 +155,21 @@ one place: `apply_op` in [`plan.py`](src/tplink_vlan_as_code/plan.py).
 7. A VLAN other than VLAN 1 needs at least one member port. The switch silently ignores an
    attempt to create an empty one, and its web UI offers no way to do so either. Verified on
    a TL-SG108PE 5.0.
+8. A port that ends up in no VLAN at all is put back in VLAN 1 untagged; its PVID is left as
+   it was. Verified on a TL-SG108PE 5.0. The planner therefore adds a port to its new VLAN
+   before removing it from the old one, and plans VLAN 1 last, so that step can also clean up
+   when two ports swap VLANs and no order avoids it.
 
-Rule 7 shapes the config model:
+Rules 7 and 8 shape the config model:
 
 - A VLAN exists on a switch only where at least one of that switch's ports is in it. A VLAN
   that loses its last port on a switch is deleted there.
-- A port's PVID must name a VLAN that exists on that switch. VLAN 1 always exists, and unless
-  you use it, it stays empty, so `pvid = 1` on tagged-only ports is the way to drop stray
-  untagged frames.
+- A port's PVID must name a VLAN that exists on that switch. VLAN 1 always exists, so
+  `pvid = 1` on tagged-only ports is the way to keep stray untagged frames out of your
+  real VLANs.
+- A port in no VLAN (for example `6 = { pvid = 1 }`) is untagged in VLAN 1, because the
+  switch puts it there. VLAN 1 then holds only such spare ports, and untagged frames from
+  `pvid = 1` trunks. Don't route VLAN 1 anywhere.
 - Set `all_vlans_on_trunks = true` at the top of the config to make every switch-to-switch
   cable carry every declared VLAN, tagged at both ends. Every VLAN then exists on every switch
   without spending an access port on it. Uplinks to a router or firewall are left exactly as
@@ -178,7 +185,7 @@ Port Setting page shows) and compares it with the configuration:
 
 | Severity | Finding |
 |---|---|
-| warning | Link is up, but the port is in **no VLAN** on the switch. A device is connected and its traffic is dropped. |
+| warning | Link is up, but the port is in **no VLAN** on the switch (only the built-in VLAN 1, unless you declared it). A device is connected and its traffic goes nowhere. |
 | warning | Link is up, and the port's live VLAN config differs from the config file. Run `plan`. |
 | info | Link is up on a port that has no `name` in the config: an undocumented device. |
 | info | No link on a port that has a `name`: the documented device is missing or off. |
@@ -187,7 +194,7 @@ Port Setting page shows) and compares it with the configuration:
 ```text
 == workshop:
    -- port  1 cam north        link down       U400 pvid400               no link on port named 'cam north'
-   !! port  7                  link 100M full  (no VLAN)                  link up, but the port is in no VLAN on the switch: its traffic is dropped
+   !! port  7                  link 100M full  U1 pvid1                   link up, but the port is in no VLAN (only built-in VLAN 1): its traffic goes nowhere
 ```
 
 The result is a point-in-time reading. A device that is asleep or powered off looks

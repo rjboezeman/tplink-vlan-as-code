@@ -7,8 +7,9 @@
 #
 # Rules of the format (checked by `tplink-vlan validate`):
 #   - A VLAN exists on a switch only where at least one of its ports is in it: the firmware
-#     cannot hold an empty VLAN. VLAN 1 is built in and always exists; unless you declare
-#     and use it, it is kept empty, which makes pvid = 1 a safe "drop untagged frames".
+#     cannot hold an empty VLAN. VLAN 1 is built in and always exists. A port in no VLAN
+#     (like "spare" below) is untagged in VLAN 1, because the switch puts it there; route
+#     nothing to VLAN 1 and pvid = 1 keeps untagged frames out of your real VLANs.
 #   - all_vlans_on_trunks = true makes every switch-to-switch cable carry every VLAN (tagged),
 #     so every VLAN exists on every switch without spending access ports on it.
 #   - Every port of every switch must be listed, unused ones too (explicit beats implicit).
@@ -49,7 +50,7 @@ uplink_port = 8                # towards the firewall
 # password_env = "RACK_SW_PW"  # default: TPLINK_PASSWORD_RACK, then TPLINK_PASSWORD
 
 [switches.rack.ports]
-1 = { name = "to studio",   tagged = [100, 200, 300, 400], pvid = 1 }   # pvid 1: untagged frames dropped
+1 = { name = "to studio",   tagged = [100, 200, 300, 400], pvid = 1 }   # pvid 1: untagged frames to unrouted VLAN 1
 2 = { name = "to workshop", tagged = [100, 200, 400], pvid = 1 }
 3 = { name = "NAS",         untagged = 200 }
 4 = { name = "printer",     untagged = 200 }

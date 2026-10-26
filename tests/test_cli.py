@@ -18,7 +18,8 @@ def cli(capsys, *args):
 def make_drift(offline_dir):
     path = offline_dir / "workshop.json"
     s = snapshot.read(path)
-    v = {**s.state.vlans, 200: replace(s.state.vlans[200], untagged=s.state.vlans[200].untagged - {5})}
+    v, d = s.state.vlans, s.state.vlans[1]  # port 5 drops out of VLAN 200; the switch parks it in VLAN 1 (rule 8)
+    v = {**v, 200: replace(v[200], untagged=v[200].untagged - {5}), 1: replace(d, untagged=d.untagged | {5})}
     snapshot.write(path, s.switch, s.host, s.identity, replace(s.state, vlans=v))
 
 
@@ -36,7 +37,7 @@ def test_plan_dry_run_apply_verify(capsys, offline_dir, tmp_path):
     code, out = cli(capsys, "plan", *off, "--out", str(tmp_path / "p.json"))
     assert code == CHANGES_PENDING
     assert [o["description"] for o in out["plan"]["switches"][1]["ops"]] == [
-        "set vlan 200 staff: tagged [8] untagged [3, 4, 5]"]
+        "set vlan 200 staff: tagged [8] untagged [3, 4, 5]", "set vlan 1 Default: tagged [] untagged [7]"]
     assert (tmp_path / "p.json").stat().st_mode & 0o777 == 0o600
 
     code, out = cli(capsys, "apply", *off, "--allow-untested-model")              # no --yes: dry run

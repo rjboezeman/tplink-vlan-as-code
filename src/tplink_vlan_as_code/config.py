@@ -79,7 +79,8 @@ class Config:
 
     def desired(self, switch: str) -> SwitchState:
         """A VLAN exists on a switch only where it has at least one port (the firmware cannot hold an
-        empty VLAN); VLAN 1 always exists. Membership comes from the port table."""
+        empty VLAN); VLAN 1 always exists. Membership comes from the port table. A port in no VLAN
+        is untagged in VLAN 1, because the switch puts it there (device rule 8)."""
         spec = self.switches[switch]
         vids = {v for p in spec.ports for v in (*p.tagged, p.untagged) if v is not None} | {DEFAULT_VID}
         tagged = {v: set() for v in vids}
@@ -89,6 +90,8 @@ class Config:
                 tagged[v].add(p.number)
             if p.untagged is not None:
                 untagged[p.untagged].add(p.number)
+            if p.untagged is None and not p.tagged:
+                untagged[DEFAULT_VID].add(p.number)
         vlans = {
             v: Vlan(self.vlans[v].name if v in self.vlans else None, frozenset(tagged[v]), frozenset(untagged[v]))
             for v in vids
@@ -309,7 +312,7 @@ class _Parser:
                 if p.pvid not in present:
                     self.err(f"switches.{s.name}.ports.{p.number}.pvid",
                              f"VLAN {p.pvid} has no port on {s.name}, and the switch cannot hold an empty VLAN; "
-                             "give it a port, or use pvid = 1 (VLAN 1 always exists) to drop untagged frames")
+                             "give it a port, or use pvid = 1 (VLAN 1 always exists; route nothing to it)")
 
     def check_topology(self, switches: dict[str, SwitchSpec], mgmt: int) -> None:
         used_parent_ports = {}
