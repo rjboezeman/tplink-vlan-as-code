@@ -246,7 +246,7 @@ class _Output:
         self.json = as_json
 
     def line(self, text: str) -> None:
-        print(text, file=sys.stderr if self.json else sys.stdout)
+        print(text, file=sys.stderr if self.json else sys.stdout, flush=True)  # keep order with progress on stderr
 
     def progress(self, text: str) -> None:
         print(text, file=sys.stderr)

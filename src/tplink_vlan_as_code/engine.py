@@ -33,7 +33,9 @@ PLAN_FORMAT = "tplink-vlan-as-code/plan/v1"
 
 # Hardware strings, exactly as the switch reports them, on which apply has been verified end-to-end.
 # Anything else needs --allow-untested-model. Add a version here only after a verified real apply.
-TESTED_HARDWARE: frozenset[str] = frozenset()
+TESTED_HARDWARE: frozenset[str] = frozenset({
+    "TL-SG108PE 5.0",  # firmware 1.0.0 Build 20230218 Rel.51358, three switches, Oct 2026
+})
 
 Connector = Callable[[SwitchSpec], Device]
 Log = Callable[[str], None]

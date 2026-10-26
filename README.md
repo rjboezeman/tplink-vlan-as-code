@@ -20,9 +20,9 @@ It has **no third-party runtime dependencies**. Every byte sent to a switch come
 this repository's own small client ([`webui.py`](src/tplink_vlan_as_code/webui.py)),
 built on the Python standard library.
 
-> **Status: alpha.** The tool has a full test suite against a simulated switch,
-> but apply has **not yet been verified end-to-end on real hardware**.
-> Read-only commands (`validate`, `plan`, `snapshot`, `diagram`) are safe to try.
+> **Status: alpha.** Verified end-to-end (read and apply) on TL-SG108PE v5.0 in a
+> three-switch network; other Easy Smart models are untested. Read-only commands
+> (`validate`, `plan`, `links`, `snapshot`, `diagram`) are safe to try on any of them.
 > See [Supported hardware](#supported-hardware).
 
 Not affiliated with TP-Link.
@@ -193,7 +193,7 @@ Verified with this tool:
 
 | Hardware (as reported by the switch) | Firmware | read | apply |
 |---|---|---|---|
-| *none yet* | | | |
+| TL-SG108PE 5.0 | 1.0.0 Build 20230218 Rel.51358 | yes | yes |
 
 Hardware not in this list needs `--allow-untested-model` for writes. After a successful
 real apply on new hardware, add the exact hardware string to `TESTED_HARDWARE` in
