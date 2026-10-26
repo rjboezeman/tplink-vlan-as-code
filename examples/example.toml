@@ -1,0 +1,91 @@
+# Example desired state: a router, one core switch, two switches behind it.
+# All addresses are documentation ranges (RFC 5737 / RFC 7042); nothing here is real.
+#
+# Rules of the format (checked by `tplink-vlan validate`):
+#   - Every VLAN listed under [vlans] is created on every switch. VLAN 1 is built in:
+#     declare it only if you use it; otherwise it is kept, emptied, and left alone.
+#   - Every port of every switch must be listed, unused ones too (explicit beats implicit).
+#   - A port has at most one untagged VLAN; its PVID defaults to that VLAN.
+#     A port with no untagged VLAN needs an explicit pvid.
+#   - Each switch's uplink_port must carry the management VLAN, and both ends of a
+#     switch-to-switch cable must carry the management VLAN the same way.
+#   - Passwords never go in this file. Each switch reads the environment variable
+#     named by password_env (default TPLINK_PASSWORD), optionally from a .env file.
+
+title = "Example home network"
+management_vlan = 85
+
+[vlans.10]
+name = "routermgt"
+description = "router management"
+
+[vlans.50]
+name = "wifi"
+color = "#1E88E5"   # optional, diagram only
+
+[vlans.85]
+name = "lan"
+description = "trusted LAN, switch management"
+
+[vlans.90]
+name = "iot"
+
+[vlans.999]
+name = "wan"
+description = "raw ISP hand-off"
+
+[vlans.4000]
+name = "blackhole"
+description = "PVID for tagged-only ports: untagged frames go nowhere"
+
+[switches.core]
+host = "192.0.2.2"
+model = "TL-SG108PE"
+mac = "00:00:5E:00:53:02"      # pin it: the tool refuses to configure a different device
+uplink_port = 1                # towards the router
+# username = "admin"           # default
+# password_env = "TPLINK_PASSWORD"
+
+[switches.core.ports]
+1 = { name = "router",  tagged = [50, 85, 90, 999], pvid = 4000 }
+2 = { name = "router mgmt", untagged = 10 }
+3 = { name = "office",  tagged = [10, 50, 85, 90, 999], pvid = 4000 }
+4 = { name = "attic",   tagged = [10, 50, 85, 999], pvid = 4000 }
+5 = { name = "spare",   pvid = 4000 }
+6 = { untagged = 85 }
+7 = { name = "printer", untagged = 90 }
+8 = { name = "ONT",     untagged = 999 }
+
+[switches.office]
+host = "192.0.2.3"
+model = "TL-SG108PE"
+mac = "00:00:5E:00:53:03"
+uplink_port = 1
+upstream = { switch = "core", port = 3 }
+
+[switches.office.ports]
+1 = { name = "uplink",  tagged = [10, 50, 85, 90, 999], pvid = 4000 }
+2 = { name = "AP",      untagged = 50, tagged = [10, 85] }
+3 = { name = "TV",      untagged = 90 }
+4 = { untagged = 85 }
+5 = { untagged = 85 }
+6 = { untagged = 85 }
+7 = { untagged = 85 }
+8 = { untagged = 85 }
+
+[switches.attic]
+host = "192.0.2.4"
+model = "TL-SG108PE"
+mac = "00:00:5E:00:53:04"
+uplink_port = 1
+upstream = { switch = "core", port = 4 }
+
+[switches.attic.ports]
+1 = { name = "uplink",  tagged = [10, 50, 85, 999], pvid = 4000 }
+2 = { name = "AP",      untagged = 50, tagged = [10, 85] }
+3 = { untagged = 85 }
+4 = { untagged = 85 }
+5 = { untagged = 85 }
+6 = { untagged = 85 }
+7 = { untagged = 85 }
+8 = { name = "lab WAN", untagged = 999 }
